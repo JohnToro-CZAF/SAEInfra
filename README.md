@@ -9,8 +9,8 @@ Anyone has problem of running multiple deep learning experiments on highly avail
 * Multiple jobs on multiple GPUs
 * Queue-based job executing
 * Allows threading-based job instance
-* Each Celery worker (Thread POOL implementation) handles a job at one time. Since this is good for large-scaled, long running time like inference or training instance. 
-TODO:
+* Each Celery worker (Thread POOL implementation) handles a job at one time. Since this is good for large-scaled, long running time like inference or training instance. \
+## TODO:
 * Allows to configure priority.
 * Allows to configure the running task:
     * Save method: saving when the job is stopped.
