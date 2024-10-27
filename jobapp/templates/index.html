@@ -1,0 +1,744 @@
+<!-- static/index.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta charset="UTF-8">
+    <title>Torch Job Manager</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            position: relative;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        /* Horizontal Form Styling */
+        .form-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .form-row label {
+            width: 200px;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        .form-row input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        /* Submit Button Styling */
+        #create-job-form button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        #create-job-form button:hover {
+            background-color: #0056b3;
+        }
+        /* Job Card Styling */
+        .job {
+            border: 1px solid #ccc;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .progress-bar {
+            width: 100%;
+            background-color: #e0e0e0;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 5px;
+            height: 20px;
+        }
+        .progress {
+            height: 100%;
+            background-color: #4caf50;
+            width: 0%;
+            transition: width 0.5s;
+            text-align: center;
+            color: white;
+            line-height: 20px;
+            font-size: 12px;
+        }
+        button {
+            margin-right: 5px;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-stop {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-stop:hover {
+            background-color: #c82333;
+        }
+        .btn-continue {
+            background-color: #28a745;
+            color: white;
+        }
+        .btn-continue:hover {
+            background-color: #218838;
+        }
+        .btn-disabled {
+            background-color: #6c757d;
+            color: white;
+            cursor: not-allowed;
+        }
+        /* Loss Chart Styling */
+        .loss-chart {
+            width: 100%;
+            height: 100px; /* Reduced height */
+            margin-top: 10px;
+        }
+
+        /* Resource Monitoring Styling */
+        .resource-monitor {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            max-height: 80vh;
+            background-color: rgba(255, 255, 255, 0.95);
+            border: 1px solid #007bff;
+            border-radius: 8px;
+            padding: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            display: none; /* Hidden by default */
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        .resource-monitor.visible {
+            display: block;
+        }
+        .resource-section {
+            margin-bottom: 15px;
+        }
+        .toggle-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            z-index: 1001;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .toggle-button:hover {
+            background-color: #0056b3;
+        }
+        /* Responsive Adjustments */
+        @media (max-width: 600px) {
+            .resource-monitor {
+                width: 90%;
+                right: 5%;
+                top: 70px;
+            }
+            .toggle-button {
+                top: 70px;
+            }
+        }
+        .memory-status {
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        
+        .memory-warning {
+            border-color: #ffc107;
+            background-color: #fff3cd;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h1>Torch Job Manager</h1>
+
+    <h2>Create a New Job</h2>
+    <form id="create-job-form">
+        <label for="model-name">Model Name:</label><br>
+        <input type="text" id="model-name" name="model_name" required><br><br>
+
+        <label for="dataset-name">Dataset Name:</label><br>
+        <input type="text" id="dataset-name" name="dataset_name" required><br><br>
+
+        <label for="gpu-memory">GPU Memory Required (MB):</label><br>
+        <input type="number" id="gpu-memory" name="memory_required" min="256" step="256" required><br><br>
+
+        <label for="gpu-device">GPU Device ID:</label><br>
+        <input type="number" id="gpu-device" name="gpu_id" min="0" step="1" required><br><br>
+        
+        <label for="batch-size">Batch Size:</label><br>
+        <input type="number" id="batch-size" name="batch_size" min="1" step="1" required><br><br>
+
+        <button type="submit">Create Job</button>
+    </form>
+
+    <h2>All Jobs</h2>
+    <div id="jobs-container"></div>
+
+    <!-- Toggle Button for Resource Monitoring -->
+    <button class="toggle-button" onclick="toggleResourceMonitor()">&#x1F50E;&#xFE0E;</button> <!-- 🔎 -->
+
+    <!-- Resource Monitoring Panel -->
+    <div class="resource-monitor" id="resource-monitor">
+        <h3>System Resources</h3>
+        <div class="resource-section">
+            <h4>GPU Resources</h4>
+            <canvas id="gpu-chart" width="280" height="150"></canvas>
+        </div>
+        <div class="resource-section">
+            <h4>CPU Usage</h4>
+            <canvas id="cpu-chart" width="280" height="100"></canvas>
+        </div>
+        <div class="resource-section">
+            <h4>RAM Usage</h4>
+            <canvas id="ram-chart" width="280" height="100"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+        // Initialize Charts
+        const gpuCtx = document.getElementById('gpu-chart').getContext('2d');
+        const cpuCtx = document.getElementById('cpu-chart').getContext('2d');
+        const ramCtx = document.getElementById('ram-chart').getContext('2d');
+
+        const gpuChart = new Chart(gpuCtx, {
+            type: 'bar',
+            data: {
+                labels: [], // GPU IDs
+                datasets: [{
+                    label: 'Free Memory (MB)',
+                    data: [],
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: false,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Memory (MB)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'GPU ID'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+
+        const cpuChart = new Chart(cpuCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'CPU Usage (%)',
+                    data: [],
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    fill: true,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: false,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'CPU Usage (%)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+
+        const ramChart = new Chart(ramCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'RAM Usage (%)',
+                    data: [],
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    fill: true,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: false,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'RAM Usage (%)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+
+        // Toggle Resource Monitor Visibility
+        function toggleResourceMonitor() {
+            const monitor = document.getElementById('resource-monitor');
+            monitor.classList.toggle('visible');
+        }
+
+        // Fetch and update system resources
+        function fetchResources() {
+            fetch('/api/system_resources', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                updateGPUChart(data.gpus);
+                updateCPUChart(data.cpu);
+                updateRAMChart(data.ram);
+            })
+            .catch(error => {
+                console.error('Error fetching system resources:', error);
+            });
+        }
+
+        function updateGPUChart(gpus) {
+            gpuChart.data.labels = gpus.map(gpu => `GPU ${gpu.gpu_id}`);
+            gpuChart.data.datasets[0].data = gpus.map(gpu => gpu.memory_free);
+            gpuChart.update();
+        }
+
+        function updateCPUChart(cpuUsage) {
+            const timeLabel = new Date().toLocaleTimeString();
+            if (cpuChart.data.labels.length > 20) {
+                cpuChart.data.labels.shift();
+                cpuChart.data.datasets[0].data.shift();
+            }
+            cpuChart.data.labels.push(timeLabel);
+            cpuChart.data.datasets[0].data.push(cpuUsage);
+            cpuChart.update();
+        }
+
+        function updateRAMChart(ramUsage) {
+            const timeLabel = new Date().toLocaleTimeString();
+            if (ramChart.data.labels.length > 20) {
+                ramChart.data.labels.shift();
+                ramChart.data.datasets[0].data.shift();
+            }
+            ramChart.data.labels.push(timeLabel);
+            ramChart.data.datasets[0].data.push(ramUsage);
+            ramChart.update();
+        }
+
+        // Handle job creation form submission
+        // Handle job creation form submission
+        document.getElementById('create-job-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const modelName = document.getElementById('model-name').value.trim();
+            const datasetName = document.getElementById('dataset-name').value.trim();
+            const gpuMemory = parseInt(document.getElementById('gpu-memory').value.trim());
+            const gpuDevice = parseInt(document.getElementById('gpu-device').value.trim());
+            const batchSize = parseInt(document.getElementById('batch-size').value.trim());
+
+            if (!modelName || !datasetName || isNaN(gpuMemory) || isNaN(gpuDevice)) {
+                alert('Please fill out all fields correctly.');
+                return;
+            }
+
+            const send_data = {
+                model_name: modelName,
+                dataset_name: datasetName,
+                memory_required: gpuMemory,
+                gpu_id: gpuDevice,
+                batch_size: batchSize
+            }
+
+            fetch('/create_job', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken 
+                },
+                body: JSON.stringify(send_data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.job_id) {
+                    alert(`Job created with ID: ${data.job_id}`);
+                    fetchJobs(); // Refresh the job list
+                    document.getElementById('create-job-form').reset();
+                } else {
+                    alert('Failed to create job.');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while creating the job.');
+            });
+        });
+
+        // Function to fetch all jobs from the backend
+        // Function to fetch all jobs from the backend
+        const existingJobs = {};
+        function fetchJobs() {
+            fetch('/jobs', {
+                method: 'GET'
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Fetched jobs:', data);
+                console.log('Existing jobs:', existingJobs);
+                const jobsContainer = document.getElementById('jobs-container');
+                const newJobs = data.jobs;
+
+                // Mark all existing jobs for potential removal
+                for (const jobId in existingJobs) {
+                    existingJobs[jobId].markedForRemoval = true;
+                }
+
+                newJobs.forEach(job => {
+                    console.log(existingJobs)
+                    console.log('Processing job:', job, job.job_id, job.job_id in existingJobs);
+                    if (job.job_id in existingJobs) {
+                        // Update existing job element
+                        console.log("Updating existing job element", existingJobs[job.job_id]);
+                        updateJobElement(existingJobs[job.job_id], job);
+                        existingJobs[job.job_id].markedForRemoval = false;
+                    } else {
+                        // Create new job element
+                        const jobDiv = createJobElement(job);
+                        console.log("Creating new job element", jobDiv);
+                        jobsContainer.appendChild(jobDiv);
+                        existingJobs[job.job_id] = jobDiv;
+                        renderLossChart(job.job_id, job.loss_history);
+                        // If job.status is 'failed' and stage_status indicates memory issues, display the message
+                        if (job.status === 'failed' && job.stage_status.startsWith('Insufficient GPU memory')) {
+                            const memoryStatusElem = jobDiv.querySelector('.memory-status');
+                            memoryStatusElem.textContent = `Job failed due to insufficient GPU memory. Required: ${job.memory_required} MB`;
+                            jobDiv.classList.add('memory-warning');
+                        }
+
+                    }
+                });
+
+                // Remove jobs that no longer exist
+                for (const jobId in existingJobs) {
+                    if (existingJobs[jobId].markedForRemoval) {
+                        jobsContainer.removeChild(existingJobs[jobId]);
+                        delete existingJobs[jobId];
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching jobs:', error);
+                alert('An error occurred while fetching jobs.');
+            });
+        }
+
+        // Function to stop a job
+        function stopJob(jobId) {
+            if (!confirm(`Are you sure you want to stop job ${jobId}?`)) return;
+
+            fetch(`/jobs/${jobId}/stop`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken 
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                fetchJobs();
+            })
+            .catch(error => {
+                console.error('Error stopping job:', error);
+                alert('An error occurred while stopping the job.');
+            });
+        }
+
+        // Function to continue a job
+        function continueJob(jobId) {
+            if (!confirm(`Are you sure you want to continue job ${jobId}?`)) return;
+
+            fetch(`/jobs/${jobId}/continue`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken 
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                fetchJobs();
+            })
+            .catch(error => {
+                console.error('Error continuing job:', error);
+                alert('An error occurred while continuing the job.');
+            });
+        }
+        // Function to update existing job element
+        function updateJobElement(jobDiv, jobData) {
+            jobDiv.querySelector('.status').textContent = capitalize(jobData.status);
+            jobDiv.querySelector('.progress').style.width = `${jobData.progress}%`;
+            jobDiv.querySelector('.progress').textContent = `${jobData.progress.toFixed(2)}%`;
+
+            // Update Assigned GPU
+            const assignedGpuElem = jobDiv.querySelector('.assigned-gpu');
+            assignedGpuElem.textContent = jobData.assigned_gpu !== null ? `GPU ${jobData.assigned_gpu}` : 'Not Assigned';
+
+            const preferedGpuElem = jobDiv.querySelector('.prefered-gpu');
+            preferedGpuElem.textContent = jobData.prefered_gpu !== null ? `GPU ${jobData.prefered_gpu}` : 'Not Assigned';
+
+            // Update Stage Status
+            const stageStatusElem = jobDiv.querySelector('.stage-status');
+            stageStatusElem.textContent = capitalize(jobData.stage_status);
+
+            // Update GPU Memory Required
+            const memoryRequiredElem = jobDiv.querySelector('.memory-required');
+            memoryRequiredElem.textContent = `${jobData.memory_required} MB`;
+
+            // Update Peak GPU Memory Usage
+            const runningMemoryElem = jobDiv.querySelector('.running-memory');
+            runningMemoryElem.textContent = jobData.running_memory !== null ? `${jobData.running_memory} MB` : 'N/A';
+
+            // Update Buttons
+            const controlsDiv = jobDiv.querySelector('.controls');
+            controlsDiv.innerHTML = renderButtons(jobData);
+
+            // Optionally, update the loss chart if new data is available
+            const lossChartId = `loss-chart-${jobData.job_id}`;
+            const lossChartCanvas = document.getElementById(lossChartId);
+            if (lossChartCanvas) {
+                // Destroy existing chart instance if exists to prevent duplication
+                if (lossChartCanvas.chartInstance) {
+                    lossChartCanvas.chartInstance.destroy();
+                }
+                lossChartCanvas.chartInstance = new Chart(lossChartCanvas.getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: jobData.loss_history.map((_, index) => index + 1),
+                        datasets: [{
+                            label: 'Loss',
+                            data: jobData.loss_history,
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            fill: true,
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: false,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Epoch'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Loss'
+                                },
+                                beginAtZero: true
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        }
+                    }
+                });
+            }
+            // Update Memory Status Message
+            const memoryStatusElem = jobDiv.querySelector('.memory-status');
+            if (jobData.status === 'failed') {
+                if (jobData.stage_status.startsWith('Insufficient GPU memory')) {
+                    memoryStatusElem.textContent = `Job failed due to insufficient GPU memory. Required: ${jobData.memory_required} MB`;
+                    jobDiv.classList.add('memory-warning');
+                } else {
+                    memoryStatusElem.textContent = jobData.failure_reason ? `Failure Reason: ${jobData.failure_reason}` : '';  // Clear other failure messages
+                    jobDiv.classList.remove('memory-warning');
+                }
+            } else {
+                memoryStatusElem.textContent = '';  // Clear messages for non-failed jobs
+                jobDiv.classList.remove('memory-warning');
+            }
+        }
+
+        // Function to create a new job element
+        function createJobElement(job) {
+            const jobDiv = document.createElement('div');
+            jobDiv.className = 'job';
+            jobDiv.id = `job-${job.job_id}`;
+            jobDiv.innerHTML = `
+                <p><strong>Job ID:</strong> ${job.job_id}</p>
+                <p><strong>Model Name:</strong> ${job.model_name}</p>
+                <p><strong>Dataset Name:</strong> ${job.dataset_name}</p>
+                <p><strong>Status:</strong> <span class="status">${capitalize(job.status)}</span></p>
+                <p><strong>Stage Status:</strong> <span class="stage-status">${capitalize(job.stage_status)}</span></p>
+                <p><strong>Assigned GPU:</strong> <span class="assigned-gpu">${job.assigned_gpu !== null ? `GPU ${job.assigned_gpu}` : 'Not Assigned'}</span></p>
+                <p><strong>Prefered GPU:</strong> <span class="prefered-gpu">${job.prefered_gpu !== null ? `GPU ${job.prefered_gpu}` : 'Not Assigned'}</span></p>
+                <p><strong>GPU Memory Required:</strong> <span class="memory-required">${job.memory_required} MB</span></p>
+                <p><strong>Peak GPU Memory Usage:</strong> <span class="running-memory">${job.running_memory !== null ? `${job.running_memory} MB` : 'N/A'}</span></p>
+                <div class="progress-bar">
+                    <div class="progress" style="width: ${job.progress}%;"></div>
+                </div>
+                <p><strong>Progress:</strong> ${job.progress.toFixed(2)}%</p>
+                <p class="memory-status" style="color: red; font-weight: bold;">${job.failure_reason ? `Failure Reason: ${job.failure_reason}` : ''}</p>
+                <canvas id="loss-chart-${job.job_id}" class="loss-chart"></canvas>
+                <div class="controls">
+                    ${renderButtons(job)}
+                </div>
+            `;
+            return jobDiv;
+        }
+
+        // Function to render buttons based on job status
+        function renderButtons(job) {
+            let buttons = '';
+            if (job.status === 'running' || job.status === 'queued') {
+                buttons += `<button class="btn-stop" onclick="stopJob('${job.job_id}')">Stop</button>`;
+            }
+            if (job.status === 'stopped') {
+                buttons += `<button class="btn-continue" onclick="continueJob('${job.job_id}')">Continue</button>`;
+            }
+            if (job.status === 'completed') {
+                buttons += `<button class="btn-disabled" disabled>Completed</button>`;
+            }
+            if (job.status === 'queued') {
+                buttons += `<button class="btn-disabled" disabled>Queued</button>`;
+            }
+            return buttons;
+        }
+
+        // Function to capitalize strings
+        function capitalize(str) {
+            if (!str) return '';
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+
+        // Function to render loss chart
+        function renderLossChart(jobId, lossHistory) {
+            console.log("Rendering loss chart for job: ", jobId);
+            console.log(document.getElementById(`loss-chart-${jobId}`));
+            const ctx = document.getElementById(`loss-chart-${jobId}`).getContext('2d');
+            const lossChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: lossHistory.map((_, index) => index + 1),
+                    datasets: [{
+                        label: 'Loss',
+                        data: lossHistory,
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: false,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Epoch'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Loss'
+                            },
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+
+            // Attach the chart instance to the canvas for later updates
+            document.getElementById(`loss-chart-${jobId}`).chartInstance = lossChart;
+        }
+
+        // Initial fetch and polling every 5 seconds
+        fetchJobs();
+        fetchResources(); // Initial resource fetch
+        setInterval(fetchJobs, 1000);
+        setInterval(fetchResources, 500); // Fetch resources every 5 seconds
+
+    </script>
+</body>
+</html>
